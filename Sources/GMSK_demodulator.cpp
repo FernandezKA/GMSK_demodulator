@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
+#include <math.h>
 
 namespace Demodulators {
 
@@ -38,34 +39,6 @@ int GMSK::Add_Samples(std::vector<std::complex<int16_t>> &input) {
   return (input_stream.size() == input.size()) ? (0) : (-1);
 }
 
-/**
- * @brief В данной функции по битовой маске определяем, какие из битов никогда
- * не используются в отсчетах, и двигаем влево на это количество бит.
- * Своеобразная нормировка отсчетов.
- */
-size_t GMSK::Normalization(std::vector<std::complex<int16_t>> &samples) {
-  int16_t bitmask_shift = 0;
-
-  for (const auto &s : samples) {
-    bitmask_shift |= abs(s.real());
-    bitmask_shift |= abs(s.imag());
-  }
-
-  uint32_t ones = (1u << 31);
-  uint8_t shift_val = 0;
-
-  while ((bitmask_shift & ones) == ones) {
-    shift_val++;
-  }
-
-  for (auto &s : samples) {
-    std::complex<int16_t> shifted =
-        (s.real() << shift_val, s.imag() << shift_val);
-    s = shifted;
-  }
-  return static_cast<size_t>(shift_val);
-}
-
 const std::vector<bool> &GMSK::Get_Bitstream() const { return output_stream; }
 
 /**
@@ -73,17 +46,35 @@ const std::vector<bool> &GMSK::Get_Bitstream() const { return output_stream; }
  */
 std::vector<bool> GMSK::Demodulate(void) {
   std::vector<int> demodulatedBits;
-  double phase = 0.0;
-  double curr_phase = 0;
   size_t sample_per_symbol =
       sample_rate / baudrate; /*Количество отсчетов на один символ*/
   std::vector<double> phase_samples;
   for (const auto &s : input_stream) {
-    phase_samples.push_back(
-        (180.0 / M_PI) *
-        atanf(static_cast<float>(s.imag()) / static_cast<float>(s.real())));
+    double tan_phase = 0; 
+  
+    if(s.real()!= 0){
+      tan_phase = static_cast<double>(s.imag()) / static_cast<double>(s.real());
+    }
+    double phase = atan(tan_phase);
+    phase_samples.push_back(phase);
   }
-  std::cout << "Phase samples size " << phase_samples.size();
+  std::cout << "Phase samples size " << phase_samples.size() << std::endl;
+
+  size_t sample_index = 0;
+  double last_phase = 0.0, curr_phase = 0.0;
+  while (sample_index < phase_samples.size()) {
+    curr_phase = phase_samples.at(sample_index);
+
+    double deltaPhase = curr_phase - last_phase; 
+    if(deltaPhase < 0){
+      deltaPhase = -deltaPhase; 
+    }
+    bool bit = (deltaPhase > M_PI * 0.25) ? (1) : (0); 
+    output_stream.push_back(bit);
+
+    sample_index += sample_per_symbol;
+  }
+
   std::ofstream atg("atan.txt");
   if (atg.is_open()) {
     for (const auto &s : phase_samples) {
@@ -93,9 +84,12 @@ std::vector<bool> GMSK::Demodulate(void) {
   return output_stream;
 }
 
-/*Простая имплементация фильтра гаусса, которая необходима перед фильтрацией*/
+/*Простая имплементация ФНЧ, которая необходима перед фильтрацией*/
 std::vector<std::complex<int16_t>> &
-GMSK::LPF(std::vector<std::complex<int16_t>> &in) {}
+GMSK::LPF(std::vector<std::complex<int16_t>> &in) {
+  /*TODO: Need to  write LPF filter! */
+  return in; 
+}
 
 bool GMSK::CheckQuadrantSequence(uint8_t last, uint8_t next) const {
   if (next > last && last != 4)

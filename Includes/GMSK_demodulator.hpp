@@ -25,7 +25,6 @@ public:
   int Add_Samples(std::vector<std::complex<int16_t>> &);
   const std::vector<bool> &Get_Bitstream() const;
 
-  size_t Normalization(std::vector<std::complex<int16_t>> &);
   std::vector<bool> Demodulate(void);
   std::vector<std::complex<int16_t>> &LPF(std::vector<std::complex<int16_t>> &);
 
