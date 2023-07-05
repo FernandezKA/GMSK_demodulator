@@ -1,8 +1,24 @@
+/**
+ * @file GMSK_demodulator
+ * @author FernandezKA
+ * @date 2023-07-05
+ * @brief Реализация GMSK демодулятора
+ * @details
+ *  1. Пропускаем I/Q через ФНЧ, таким образом убирая ВЧ;
+ *  2. Находим значение фазы для каждого отсчета;
+ *  3. Оцениваем, является ли на символьном периоде фаза возрастающей, или
+ * убывающей. В зависимости от этого формируем битовый поток до кодирования;
+ *  4. Преобразуем из NRZI в битовый поток.
+ * @TODO Нужно обеспечить синхронизацию сообщения, чтобы не декодировать поток
+ * без сигнала (шумы).
+ */
+
 #include "GMSK_demodulator.hpp"
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <iomanip>
 
 namespace Demodulators {
@@ -22,6 +38,11 @@ int GMSK::Add_Samples(std::vector<std::complex<int16_t>> &input) {
   return (input_stream.size() == input.size()) ? (0) : (-1);
 }
 
+/**
+ * @brief В данной функции по битовой маске определяем, какие из битов никогда
+ * не используются в отсчетах, и двигаем влево на это количество бит.
+ * Своеобразная нормировка отсчетов.
+ */
 size_t GMSK::Normalization(std::vector<std::complex<int16_t>> &samples) {
   int16_t bitmask_shift = 0;
 
@@ -45,50 +66,43 @@ size_t GMSK::Normalization(std::vector<std::complex<int16_t>> &samples) {
   return static_cast<size_t>(shift_val);
 }
 
-const std::vector<uint8_t> &GMSK::Get_Bitstream() const {
+const std::vector<bool> &GMSK::Get_Bitstream() const { return output_stream; }
+
+/**
+ * @brief Демодуляция происходит здесь. Описание приложено в начале файла.
+ */
+std::vector<bool> GMSK::Demodulate(void) {
+  std::vector<int> demodulatedBits;
+  double phase = 0.0;
+  double curr_phase = 0;
+  size_t sample_per_symbol =
+      sample_rate / baudrate; /*Количество отсчетов на один символ*/
+  std::vector<double> phase_samples;
+  for (const auto &s : input_stream) {
+    phase_samples.push_back(
+        (180.0 / M_PI) *
+        atanf(static_cast<float>(s.imag()) / static_cast<float>(s.real())));
+  }
+  std::cout << "Phase samples size " << phase_samples.size();
+  std::ofstream atg("atan.txt");
+  if (atg.is_open()) {
+    for (const auto &s : phase_samples) {
+      atg << s << "\n\r";
+    }
+  }
   return output_stream;
 }
 
-std::vector<bool> GMSK::Demodulate(void) {
-  std::vector<int> demodulatedBits;
-  int16_t phase = 0.0;
+/*Простая имплементация фильтра гаусса, которая необходима перед фильтрацией*/
+std::vector<std::complex<int16_t>> &
+GMSK::LPF(std::vector<std::complex<int16_t>> &in) {}
 
-  for (int i = 0; i < input_stream.size(); i++) {
-    std::complex<int16_t> sample = input_stream.at(i);
-    double curr_phase = std::atan(sample.imag() / sample.real());
-    int bit = (curr_phase - phase > M_PI) ? 1 : 0;
-    demodulatedBits.push_back(bit);
-    phase = curr_phase;
-  }
-
-  size_t oversampling =
-      sample_rate / baudrate; /*Количество отсчетов на один символ*/
-
-  std::vector<bool> output_stream;
-
-  for (auto &s : demodulatedBits) {
-    static size_t counter = 0;
-    static bool last = demodulatedBits.at(0);
-
-    if (s ==
-        1) { /*Если в рамках одного временного интервала символа мы
-                обнаружили сдвиг фазы - значит это была посылка с единицей*/
-      counter = 0;
-      output_stream.push_back(true);
-      continue;
-    }
-
-    if (counter ==
-        oversampling) { /*Если за один символьный интервал скачка
-                           фазы не было, то это была посылка с нулем*/
-      counter = 0;
-      output_stream.push_back(false);
-      continue;
-    }
-    ++counter;
-  }
-
-  return output_stream;
+bool GMSK::CheckQuadrantSequence(uint8_t last, uint8_t next) const {
+  if (next > last && last != 4)
+    return true;
+  if (last == 4u && next == 0u)
+    return true;
+  return false;
 }
 
 } // namespace Demodulators
