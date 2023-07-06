@@ -19,20 +19,23 @@ class GMSK {
   const double phase_threshold = 1;
 
 public:
-  GMSK(size_t frame_size = 4096, size_t baudrate = 9600,
-       size_t sample_rate = 100000);
+  GMSK();
   ~GMSK();
-  int Add_Samples(std::vector<std::complex<int16_t>> &);
+  int Add_Samples(std::vector<std::complex<double>> &);
   const std::vector<bool> &Get_Bitstream() const;
 
   std::vector<bool> Demodulate(void);
   std::vector<std::complex<int16_t>> &LPF(std::vector<std::complex<int16_t>> &);
+  std::vector<double> CumSum(std::vector<double>&, size_t) const; /*Кумуллятивная сумма, с индексом сброса окна*/
 
 protected:
-  size_t frame_size;
-  size_t baudrate;
-  size_t sample_rate;
-  size_t freq_deviation;
+
+  const double Fs = 100000; 
+  const double Ts = 10.4e-3; 
+  const size_t baudrate = 9600; 
+  const size_t samples_per_symbol = static_cast<size_t>(Ts*Fs);
+  const size_t frame_size = 0x1000; 
+
 };
 
 }; // namespace Demodulators

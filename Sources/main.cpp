@@ -9,14 +9,14 @@ int main() {
   std::ifstream dump;
   dump.open("/home/fka/dev_dsp/GMSK_demodulator/gmsk_1.txt");
   if (dump.is_open()) {
-    std::vector<std::complex<int16_t>> iq;
-    std::complex<int16_t> sample;
+    std::vector<std::complex<double>> iq;
+    std::complex<double> sample;
     while (dump >> sample)
       iq.push_back(sample);
     std::cout << "IQ samples size : " << iq.size() << std::endl;
-    Demodulators::GMSK gmsk(4096, 9600, 100000);
+    Demodulators::GMSK gmsk;
 
-    gmsk.Add_Samples(gmsk.LPF(iq));
+    gmsk.Add_Samples(iq);
     auto demodulated = gmsk.Demodulate();
     std::cout << "Demodulated bitstream size is " << demodulated.size()
               << std::endl;
