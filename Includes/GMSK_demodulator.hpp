@@ -16,8 +16,7 @@ class GMSK {
 
   std::vector<uint8_t> NRZI_conversion(const std::vector<uint8_t> &) const;
   bool CheckQuadrantSequence(uint8_t last, uint8_t next) const;
-  const double phase_threshold = 1;
-
+  std::vector<bool> RemoveInsertions(const std::vector<bool>& ) const; 
 public:
   GMSK();
   ~GMSK();

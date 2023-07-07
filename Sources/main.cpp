@@ -1,18 +1,22 @@
 #include "GMSK_demodulator.hpp"
 
+#include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 
 int main() {
 
-  std::ifstream dump;
+  std::ifstream dump; 
+  std::ofstream dump_rd; 
   dump.open("/home/fka/dev_dsp/GMSK_demodulator/gmsk_1.txt");
   if (dump.is_open()) {
     std::vector<std::complex<double>> iq;
     std::complex<double> sample;
-    while (dump >> sample)
+    while (dump >> sample){
       iq.push_back(sample);
+    }
     std::cout << "IQ samples size : " << iq.size() << std::endl;
     Demodulators::GMSK gmsk;
 
