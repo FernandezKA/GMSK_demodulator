@@ -4,7 +4,8 @@ clc
 
 sample_per_sym = 10; 
 
-test_signal = gmsk(:, 1)'; 
+test_signal = gmsk(:, 1)';
+test_signal = test_signal * 10000;
 
 freq = GMSK_demodulator(test_signal); 
 

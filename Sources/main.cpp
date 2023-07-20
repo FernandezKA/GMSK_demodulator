@@ -1,37 +1,35 @@
 #include "GMSK_demodulator.hpp"
-
+#include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <iomanip>
 #include <iostream>
-#include <iterator>
+#include <vector>
+#include <complex>
 
 int main() {
+  GMSK<std::complex<float>, float, 2310> gmsk; 
 
   std::ifstream dump; 
-  std::ofstream dump_rd; 
   dump.open("/home/fka/dev_dsp/GMSK_demodulator/gmsk_1.txt");
-  if (dump.is_open()) {
-    std::vector<std::complex<double>> iq;
-    std::complex<double> sample;
+
+  if(dump.is_open()){
+    std::vector<std::complex<float>> iq;
+    std::complex<float> sample;
     while (dump >> sample){
       iq.push_back(sample);
     }
     std::cout << "IQ samples size : " << iq.size() << std::endl;
-    Demodulators::GMSK gmsk;
+    gmsk.add_samples(iq); 
+    auto result = gmsk.demodulate();
 
-    gmsk.Add_Samples(iq);
-    auto demodulated = gmsk.Demodulate();
-    std::cout << "Demodulated bitstream size is " << demodulated.size()
-              << std::endl;
+    for(const auto& s : result){
+      std::cout << s << " ";
+    }
+    std::cout << std::endl;
 
-    for(const auto& s : demodulated)
-        std::cout<<s;
-    std::cout << std::endl; 
-
-  } else {
-    std::cout << "Can't open file with I/Q samples! \n\r";
   }
-
+  else{
+    std::cout << "Can't open file with IQ /n/r";
+  }
+ 
   return 0;
 }
