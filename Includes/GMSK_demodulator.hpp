@@ -20,7 +20,6 @@
 #include <math.h>
 #include <string>
 #include <vector>
-#include <fftw3.h>
 #include <bitset>
 #include <algorithm>
 #include <iterator>
@@ -45,6 +44,10 @@ protected:
   const size_t PREAMBLE_LEN = 24;
 
 public:
+  /**
+   * @param f_samling frequency of sampling [Hz]
+   * @param BAUDRATE baudrate for current demodulator. For example, AIS used BAUDRATE = 9600U
+   */
   GMSK(size_t f_sampling, size_t baudrate)
       : m_f_sampling(f_sampling), m_baudrate(baudrate)
   {
@@ -70,6 +73,7 @@ public:
     {
       m_ext_iq.at(i) = get_convert(m_iq.at(i));
     }
+    get_log(m_iq, "iq.txt");
     return m_iq.size() == rhs.size();
   }
 
@@ -87,11 +91,14 @@ public:
   {
     std::vector<bool> decisions;
     decisions.reserve(metrics.size() / get_sample_per_symbol());
-    /*Значения берем из середины символьного интервала*/
-    for (size_t i = get_sample_per_symbol() / 2; i < metrics.size();
-         i += get_sample_per_symbol())
+    for (size_t i = get_sample_per_symbol(); i < metrics.size(); i += get_sample_per_symbol())
     {
-      decisions.push_back(metrics.at(i) > 0);
+      double sum = 0;
+      for (size_t j = i; j < i + get_sample_per_symbol(); ++j)
+      {
+        sum += metrics.at(j);
+      }
+      decisions.push_back(sum < 0);
     }
     return decisions;
   }
@@ -216,11 +223,14 @@ public:
     {
       if (abs(m_iq.at(i)) > abs(average))
       {
-        auto local_average = get_average(m_iq, i, m_sample_per_symbol * MINIMAL_AIS_PACKET_SIZE);
-        if (abs(local_average) / abs(average) >= 2)
-        { /*Пока что просто считаем начало пакета по уровню 3 dB, без порога*/
-          std::cout << "Packet begin on position : " << i << std::endl;
-          packet_begin_index = i;
+        if (m_iq.size() > i + m_sample_per_symbol * PREAMBLE_LEN)
+        {
+          auto local_average = get_average(m_iq, i, m_sample_per_symbol * PREAMBLE_LEN);
+          if (abs(local_average) / abs(average) >= 2)
+          { /*Пока что просто считаем начало пакета по уровню 3 dB*/
+            std::cout << "Packet begin on position : " << i << std::endl;
+            packet_begin_index = i;
+          }
         }
       }
     }
@@ -247,6 +257,7 @@ public:
       ext_sample preamble_sample = {real, imag};
       template_preamble.at(i) = preamble_sample;
     }
+    get_log(template_preamble, "template_preamble");
     return template_preamble;
   }
 

@@ -5,30 +5,35 @@
 #include <iostream>
 #include <vector>
 #include <complex>
+#include <iomanip>
 
 int main()
 {
   GMSK<std::complex<int16_t>, std::complex<double>> gmsk(100'000, 9600);
 
   std::ifstream dump;
-  dump.open("/home/fka/dev/GMSK_demodulator/gmsk_1.bin", std::ios::binary);
+  dump.open("/home/fka/dev_dsp/GMSK_demodulator/Includes/preamble.bin", std::ios::binary);
 
   if (dump.is_open())
   {
+    std::cout << "File has been open successfully\n\r"; 
     dump.seekg(0, std::ios::end);
     long unsigned int size = static_cast<long unsigned int>(dump.tellg());
-    std::vector<std::complex<int16_t>> iq(size);
-    std::cout << "File size " << size << " bytes, " << size / sizeof(std::complex<int16_t>) << " samples. /n/r";
-    dump.read(reinterpret_cast<char *>(&iq[0]), static_cast<std::streamsize>(iq.size() * sizeof(std::complex<int16_t>)));
+    dump.close(); 
+    dump.open("/home/fka/dev_dsp/GMSK_demodulator/Includes/preamble.bin", std::ios::binary); 
+    std::vector<std::complex<int16_t>> iq(size/sizeof(std::complex<int16_t>));
+    std::cout << "File size " << size << " bytes, " << size / sizeof(std::complex<int16_t>) << " samples. \n\r";
+    dump.read(reinterpret_cast<char *>(&iq[0]), size);
     gmsk.add_samples(iq);
-    gmsk.demodulate_without_noise();
+    //gmsk.demodulate_without_noise();
     auto result = gmsk.demodulate();
-
+    std::cout << "Demodulated bitstream: \n\r"; 
+    size_t index = 1; 
     for (const auto &s : result)
     {
-      std::cout << s << " ";
+      std::cout << index++ << ':' << s << " ";
+      std::cout << std::endl;
     }
-    std::cout << std::endl;
   }
   else
   {
