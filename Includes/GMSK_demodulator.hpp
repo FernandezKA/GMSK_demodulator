@@ -74,7 +74,7 @@ public:
       m_ext_iq.at(i) = get_convert(m_iq.at(i));
     }
     get_log(m_iq, "iq.txt");
-    return m_iq.size() == rhs.size();
+    return 0u != m_iq.size();
   }
 
   inline std::vector<bool> get_bitstream() const { return m_bitstream; }
@@ -145,24 +145,25 @@ public:
    *
    * @return std::vector<bool> демодулированный битовый поток
    */
-  std::vector<bool> demodulate()
+  std::vector<bool> demodulate(std::pair<size_t, size_t> packet_detected)
   {
-    std::cout << "Samples size is " << m_iq.size() << std::endl;
-    assert(0u != m_iq.size());
-
+    size_t realization_size = packet_detected.second - packet_detected.first + 1;
+    std::cout << "Samples size is " << realization_size << std::endl;
+    if (0u == realization_size)
+      return {0};
     get_log(m_iq, "iq.txt");
 
-    std::vector<ext_sample> diff(m_iq.size());
-    std::vector<double> metrics(m_iq.size());
+    std::vector<ext_sample> diff(realization_size);
+    std::vector<double> metrics(realization_size);
 
-    for (size_t i = 1; i < m_iq.size(); ++i)
+    for (size_t i = packet_detected.first + 1; i < packet_detected.second - 1; ++i)
     {
       ext_sample shift_sample = get_convert(m_iq.at(i));
       ext_sample curr_sample = get_convert(m_iq.at(i - 1));
       ext_sample mul_conj = multiply_conjugate(shift_sample, curr_sample);
-      metrics.at(i - 1) =
+      metrics.at(i - 1 - packet_detected.first) =
           get_gain() * std::atan2(mul_conj.imag(), mul_conj.real());
-      diff.at(i - 1) = mul_conj;
+      diff.at(i - 1 - packet_detected.first) = mul_conj;
     }
 
     get_log(diff, "diff.txt");
@@ -187,54 +188,75 @@ public:
       sum_re += sample_.at(i).real();
       sum_im += sample_.at(i).imag();
     }
-    sum_re /= length_;
-    sum_im /= length_;
-    return static_cast<sample>(sum_re, sum_im);
+    sum_re /= static_cast<int>(length_);
+    sum_im /= static_cast<int>(length_);
+    sample result(sum_re, sum_im);
+    return result;
   }
 
   /**
    * @brief В данной функции мы демодулируем сообщения, детектируя начало пакета
    */
-  bool demodulate_without_noise()
+  std::pair<size_t, size_t> try_to_find_packet()
   {
-    size_t avg_packet_position = detect_packet();
+    auto packet_index = detect_packet();
+    std::cout << "Packet detected from " << packet_index.first << " to " << packet_index.second << std::endl;
+    double norm_coeff = abs(get_average(m_iq, packet_index.first, packet_index.second - packet_index.first));
+    auto packet_precision_shift = get_shift_of_packet(m_ext_iq, packet_index.first, norm_coeff);
+    std::cout << "Maximal correlation with template preamble on position " << packet_precision_shift << std::endl;
 
-    auto iq_begin = m_ext_iq.begin();
-
-    auto corr = get_correlation(iq_begin + avg_packet_position, preamble_template.begin(), preamble_template.size());
-
-    // std::cout << "Maximal correlation with template preamble on position " << max(corr) << std::endl;
-
-    return true;
+    return {packet_index.first, packet_index.second};
   }
 
   /**
    * @brief Первичное определение начала пакета по нарастанию амплитуды. Если значение амплитуды для конкретного участка выше среднего значения
-   * по реализации, то мы считаем, что в этом месте гипотетически может быть пакет. После чего проверяем, соответствует ли длительность импульса
-   * размеру пакета АИС, или это был шум. После этого, если два критерия выполнены, мы пытаемся про помощи коррелляции с преамбулой детектировать
-   * точное начало пакета, с которого будем демодулировать сообщение.
+   * по реализации, то мы считаем, что в этом месте гипотетически может быть пакет.
    * @return позиция начала пакета (включая преамбулу) в реализации, которую мы обрабатываем.
    */
-  size_t detect_packet() const
+  std::pair<size_t, size_t> detect_packet() const
   {
-    size_t packet_begin_index = 0;
     sample average = get_average(m_iq, 0, m_iq.size());
+    std::cout << "Average of samples: " << average << std::endl;
+    size_t packet_begin = 0;
+    size_t packet_end = 0;
     for (size_t i = 0; i < m_iq.size(); ++i)
     {
-      if (abs(m_iq.at(i)) > abs(average))
+      if (abs(m_iq.at(i)) > 2 * abs(average)) /**3 dB threshold value*/
       {
-        if (m_iq.size() > i + m_sample_per_symbol * PREAMBLE_LEN)
-        {
-          auto local_average = get_average(m_iq, i, m_sample_per_symbol * PREAMBLE_LEN);
-          if (abs(local_average) / abs(average) >= 2)
-          { /*Пока что просто считаем начало пакета по уровню 3 dB*/
-            std::cout << "Packet begin on position : " << i << std::endl;
-            packet_begin_index = i;
-          }
-        }
+        if (!packet_begin)
+          packet_begin = i;
+        packet_end = i;
       }
     }
-    return packet_begin_index;
+    return {packet_begin, packet_end};
+  }
+
+  /**
+   * @brief Уточнение позиции начала пакета при помощи корелляции с детерминированной нормированной преамбуле.
+   * @return Сдвиг позиции положения пакета в правую сторону, необходимый для достижения максимальной корелляции преамбул.
+   */
+  size_t get_shift_of_packet(std::vector<ext_sample> &realization, size_t packet_position, double normalization_coeff)
+  {
+    auto packet_iterator = realization.begin() + packet_position - 1;
+    std::vector<ext_sample> preamble_normed(preamble_template.size());
+    for (size_t i = 0; i < preamble_template.size(); ++i)
+    {
+      preamble_normed.at(i) = preamble_template.at(i) * normalization_coeff;
+    }
+    auto preamble_iterator = preamble_normed.begin();
+    auto correlation = get_correlation(packet_iterator, preamble_iterator, preamble_template.size());
+    get_log(correlation, "correlation.txt");
+    double max_corr = 0;
+    size_t max_corr_pos = 0;
+    for (size_t i = 0; i < correlation.size(); ++i)
+    {
+      if (correlation.at(i) > max_corr)
+      {
+        max_corr = correlation.at(i);
+        max_corr_pos = i;
+      }
+    }
+    return max_corr_pos;
   }
 
   /**
@@ -245,19 +267,26 @@ public:
   {
     /*Период повторения синусоиды в преамбуле составляет 4 * кол - вот отсчетов на символьный интервал
      * Количество отсчетов на символьный интервал мы можем посчитать, как Fs * BAUDRATE, для нашей прошивки это ~10.4 отсчетов на символьный интервал
+     * Последнюю позицию дополняем нулями до размера, ближайшей степени двойки, чтобы использовать БПФ в дальшейшем.
      */
     const double preamble_length = static_cast<double>(PREAMBLE_LEN);
     std::vector<ext_sample> template_preamble(static_cast<size_t>(preamble_length) * samples_per_symbol);
     for (size_t i = 0; i < template_preamble.size(); ++i)
     {
-      double real = cos((2 * M_PI * preamble_length * static_cast<double>(i) / static_cast<double>(template_preamble.size())) / pow(
-                                                                                                                                    static_cast<double>(samples_per_symbol), 2));
-      double imag = sin((2 * M_PI * preamble_length * static_cast<double>(i) / static_cast<double>(template_preamble.size())) / pow(
-                                                                                                                                    static_cast<double>(samples_per_symbol), 2));
+      double phase = (4 * M_PI * PREAMBLE_LEN * i) / (pow(samples_per_symbol, 2) * PREAMBLE_LEN);
+      double real = cos(phase + M_PI_2);
+      double imag = sin(phase + M_PI_2);
+      ;
       ext_sample preamble_sample = {real, imag};
       template_preamble.at(i) = preamble_sample;
     }
-    get_log(template_preamble, "template_preamble");
+    size_t minimal_power = 0;
+    while (template_preamble.size() > pow(2, minimal_power))
+      minimal_power++;
+    while (template_preamble.size() < pow(2, minimal_power))
+      template_preamble.push_back(0);
+    std::cout << "Template of preamble size is " << template_preamble.size() << std::endl;
+    get_log(template_preamble, "template_preamble.txt");
     return template_preamble;
   }
 
