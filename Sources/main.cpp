@@ -6,6 +6,7 @@
 #include <vector>
 #include <complex>
 #include <iomanip>
+#include <chrono>
 
 int main()
 {
@@ -24,16 +25,21 @@ int main()
     std::vector<std::complex<int16_t>> iq(size / sizeof(std::complex<int16_t>));
     std::cout << "File size " << size << " bytes, " << size / sizeof(std::complex<int16_t>) << " samples. \n\r";
     dump.read(reinterpret_cast<char *>(&iq[0]), size);
+    auto start = chrono::steady_clock::now();
     gmsk.add_samples(iq);
     auto packet_index = gmsk.try_to_find_packet();
     auto result = gmsk.demodulate(packet_index);
+    auto end = chrono::steady_clock::now();
+    std::cout << "Elapsed time [us]: "
+              << chrono::duration_cast<chrono::microseconds>(end - start).count()
+              << " us" << endl;
     std::cout << "Demodulated bitstream: \n\r";
     size_t index = 1;
     for (const auto &s : result)
     {
-      std::cout << index++ << ':' << s << " ";
-      std::cout << std::endl;
+      std::cout << s;
     }
+    std::cout << endl;
   }
   else
   {
